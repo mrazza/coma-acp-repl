@@ -1,0 +1,15 @@
+{
+  "name": "test-acp",
+  "version": "1.0.0",
+  "description": "ACP interactive client and REPL for Coma",
+  "type": "module",
+  "private": true,
+  "main": "test_client.js",
+  "scripts": {
+    "start": "node test_client.js"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.2.1"
+  }
+}
