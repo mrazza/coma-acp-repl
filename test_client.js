@@ -30,9 +30,8 @@ function handleRequestPermission(ctx) {
     return { outcome: { outcome: "cancelled" } };
 }
 
-function handleSessionUpdate(ctx, context) {
-    const params = ctx.params;
-    const update = params.update;
+function handleSessionUpdate(notification, context) {
+    const update = notification.update;
     if (!update) return;
 
     const type = update.sessionUpdate;
@@ -88,13 +87,12 @@ async function initializeSession(connection) {
     console.log("✓ Handshake Negotiated. Protocol Version:", initResult.protocolVersion);
 
     console.log("Creating new session...");
-    const sessionResult = await connection.request(acp.methods.agent.session.new, {
+    const activeSession = await connection.buildSession({
         cwd: path.resolve(process.cwd()),
         mcpServers: []
-    });
-    const sessionId = sessionResult.sessionId;
-    console.log("✓ Session Created. ID:", sessionId);
-    return sessionId;
+    }).start();
+    console.log("✓ Session Created. ID:", activeSession.sessionId);
+    return activeSession;
 }
 
 function printReplHeader() {
@@ -104,7 +102,7 @@ function printReplHeader() {
     console.log("\x1b[90mInstructions: Type your prompt and press Enter. Type 'exit' to quit.\x1b[0m\n");
 }
 
-async function runInteractiveRepl(connection, sessionId, context) {
+async function runInteractiveRepl(activeSession, context) {
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout
@@ -128,10 +126,12 @@ async function runInteractiveRepl(connection, sessionId, context) {
                 }
 
                 try {
-                    const result = await connection.request(acp.methods.agent.session.prompt, {
-                        sessionId: sessionId,
-                        prompt: trimmed
-                    });
+                    const promptPromise = activeSession.prompt(trimmed);
+                    let activeMsg;
+                    while ((activeMsg = await activeSession.nextUpdate()).kind !== "stop") {
+                        handleSessionUpdate(activeMsg.notification, context);
+                    }
+                    const result = await promptPromise;
                     context.renderer.flush();
                     context.lastUpdateType = null;
                     console.log(`\n\x1b[90m[Response Completed. Stop Reason: ${result.stopReason}]\x1b[0m`);
@@ -159,11 +159,10 @@ async function main() {
 
     await acp.client({ name: "test-client" })
         .onRequest(acp.methods.client.session.requestPermission, handleRequestPermission)
-        .onNotification(acp.methods.client.session.update, (ctx) => handleSessionUpdate(ctx, context))
         .connectWith(stream, async (connection) => {
-            const sessionId = await initializeSession(connection);
+            const activeSession = await initializeSession(connection);
             printReplHeader();
-            await runInteractiveRepl(connection, sessionId, context);
+            await runInteractiveRepl(activeSession, context);
         });
 }
 
