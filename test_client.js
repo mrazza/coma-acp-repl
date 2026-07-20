@@ -2,6 +2,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import { spawn } from "child_process";
 import { Readable, Writable } from "stream";
 import readline from "readline";
+import path from "path";
 import { MarkdownStreamRenderer } from "./markdown_renderer.js";
 
 
@@ -78,12 +79,19 @@ async function initializeSession(connection) {
     console.log("Sending initialize request...");
     const initResult = await connection.request(acp.methods.agent.initialize, {
         protocolVersion: 1,
-        clientCapabilities: {}
+        clientCapabilities: {},
+        clientInfo: {
+            name: "test-client",
+            version: "1.0.0"
+        }
     });
     console.log("✓ Handshake Negotiated. Protocol Version:", initResult.protocolVersion);
 
     console.log("Creating new session...");
-    const sessionResult = await connection.request(acp.methods.agent.session.new, {});
+    const sessionResult = await connection.request(acp.methods.agent.session.new, {
+        cwd: path.resolve(process.cwd()),
+        mcpServers: []
+    });
     const sessionId = sessionResult.sessionId;
     console.log("✓ Session Created. ID:", sessionId);
     return sessionId;
