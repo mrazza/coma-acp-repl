@@ -1,6 +1,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { MarkdownStreamRenderer } from "./markdown_renderer.js";
+import { MarkdownStreamRenderer } from "../src/markdown/renderer.js";
+import {
+    HEADER_STYLES,
+    HEADER_PREFIXES,
+    isPlausibleLineStart,
+    isHorizontalRule,
+    matchBlockPrefix
+} from "../src/markdown/patterns.js";
 
 function createCaptureRenderer(options = {}) {
     let output = "";
@@ -18,6 +25,125 @@ function createCaptureRenderer(options = {}) {
         }
     };
 }
+
+describe("Markdown Patterns (pure functions)", () => {
+    describe("isPlausibleLineStart", () => {
+        test("accepts plausible line starts for headers, lists, blockquotes, code fences", () => {
+            assert.strictEqual(isPlausibleLineStart("#"), true);
+            assert.strictEqual(isPlausibleLineStart("### "), true);
+            assert.strictEqual(isPlausibleLineStart(">"), true);
+            assert.strictEqual(isPlausibleLineStart(">> "), true);
+            assert.strictEqual(isPlausibleLineStart("-"), true);
+            assert.strictEqual(isPlausibleLineStart("* "), true);
+            assert.strictEqual(isPlausibleLineStart("1"), true);
+            assert.strictEqual(isPlausibleLineStart("1."), true);
+            assert.strictEqual(isPlausibleLineStart("1. "), true);
+            assert.strictEqual(isPlausibleLineStart("12."), true);
+            assert.strictEqual(isPlausibleLineStart("---"), true);
+            assert.strictEqual(isPlausibleLineStart("***"), true);
+            assert.strictEqual(isPlausibleLineStart("```"), true);
+            assert.strictEqual(isPlausibleLineStart("  "), true);
+        });
+
+        test("rejects non-prefix line starts", () => {
+            assert.strictEqual(isPlausibleLineStart("2026 is"), false);
+            assert.strictEqual(isPlausibleLineStart("hello world"), false);
+            assert.strictEqual(isPlausibleLineStart("123 "), false);
+            assert.strictEqual(isPlausibleLineStart(null), false);
+            assert.strictEqual(isPlausibleLineStart(undefined), false);
+            assert.strictEqual(isPlausibleLineStart(""), false);
+        });
+    });
+
+    describe("isHorizontalRule", () => {
+        test("recognizes horizontal rules with at least 3 markers", () => {
+            assert.strictEqual(isHorizontalRule("---"), true);
+            assert.strictEqual(isHorizontalRule("----"), true);
+            assert.strictEqual(isHorizontalRule("- - -"), true);
+            assert.strictEqual(isHorizontalRule("***"), true);
+            assert.strictEqual(isHorizontalRule("* * *"), true);
+            assert.strictEqual(isHorizontalRule("___"), true);
+            assert.strictEqual(isHorizontalRule("_ _ _"), true);
+            assert.strictEqual(isHorizontalRule("   ---   "), true);
+        });
+
+        test("rejects invalid or insufficient markers", () => {
+            assert.strictEqual(isHorizontalRule("--"), false);
+            assert.strictEqual(isHorizontalRule("- - "), false);
+            assert.strictEqual(isHorizontalRule("**"), false);
+            assert.strictEqual(isHorizontalRule("__"), false);
+            assert.strictEqual(isHorizontalRule("-*-"), false);
+            assert.strictEqual(isHorizontalRule("---abc"), false);
+            assert.strictEqual(isHorizontalRule(""), false);
+            assert.strictEqual(isHorizontalRule(null), false);
+            assert.strictEqual(isHorizontalRule(undefined), false);
+        });
+    });
+
+    describe("matchBlockPrefix", () => {
+        test("matches headers 1 through 6", () => {
+            const h1 = matchBlockPrefix("# ");
+            assert.deepStrictEqual(h1, { type: "header", level: 1, prefix: HEADER_PREFIXES[1] });
+
+            const h2 = matchBlockPrefix("## ");
+            assert.deepStrictEqual(h2, { type: "header", level: 2, prefix: HEADER_PREFIXES[2] });
+
+            const h3 = matchBlockPrefix("### ");
+            assert.deepStrictEqual(h3, { type: "header", level: 3, prefix: HEADER_PREFIXES[3] });
+
+            const h4 = matchBlockPrefix("#### ");
+            assert.deepStrictEqual(h4, { type: "header", level: 4, prefix: HEADER_PREFIXES[4] });
+
+            const h6 = matchBlockPrefix("###### ");
+            assert.deepStrictEqual(h6, { type: "header", level: 6, prefix: HEADER_PREFIXES[4] });
+        });
+
+        test("matches blockquotes with single and nested bars", () => {
+            const bq1 = matchBlockPrefix("> ");
+            assert.strictEqual(bq1.type, "blockquote");
+            assert.strictEqual(bq1.level, 1);
+            assert.ok(bq1.prefix.includes("│ "));
+
+            const bq2 = matchBlockPrefix(">> ");
+            assert.strictEqual(bq2.type, "blockquote");
+            assert.strictEqual(bq2.level, 2);
+            assert.ok(bq2.prefix.includes("│ "));
+        });
+
+        test("matches bullet lists with - or *", () => {
+            const b1 = matchBlockPrefix("- ");
+            assert.strictEqual(b1.type, "bullet");
+            assert.ok(b1.prefix.includes("•"));
+
+            const b2 = matchBlockPrefix("* ");
+            assert.strictEqual(b2.type, "bullet");
+            assert.ok(b2.prefix.includes("•"));
+
+            const b3 = matchBlockPrefix("  - ");
+            assert.strictEqual(b3.type, "bullet");
+            assert.strictEqual(b3.spaces, "  ");
+        });
+
+        test("matches numbered lists", () => {
+            const num = matchBlockPrefix("1. ");
+            assert.strictEqual(num.type, "numbered");
+            assert.strictEqual(num.num, "1");
+            assert.ok(num.prefix.includes("1."));
+
+            const num2 = matchBlockPrefix("   42. ");
+            assert.strictEqual(num2.type, "numbered");
+            assert.strictEqual(num2.spaces, "   ");
+            assert.strictEqual(num2.num, "42");
+        });
+
+        test("returns null for non-prefix buffers", () => {
+            assert.strictEqual(matchBlockPrefix("not a prefix"), null);
+            assert.strictEqual(matchBlockPrefix(""), null);
+            assert.strictEqual(matchBlockPrefix(null), null);
+            assert.strictEqual(matchBlockPrefix("###"), null); // No trailing space
+        });
+    });
+});
 
 describe("MarkdownStreamRenderer", () => {
     describe("Output Target & Constructor Injection", () => {

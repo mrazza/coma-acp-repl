@@ -5,6 +5,9 @@
   "type": "module",
   "private": true,
   "main": "test_client.js",
+  "bin": {
+    "coma-repl": "./test_client.js"
+  },
   "scripts": {
     "start": "node test_client.js",
     "test": "node --test"

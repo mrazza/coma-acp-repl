@@ -20,6 +20,41 @@ A Node.js implementation of a CLI/REPL client that interacts with the **Coma** a
 
 ---
 
+## Project Structure
+
+```text
+coma-acp-repl/
+├── test_client.js               # CLI entry point & backward-compatible re-exports
+├── markdown_renderer.js         # Backward-compatible re-export for MarkdownStreamRenderer
+├── src/
+│   ├── index.js                 # Application bootstrap & unified module exports
+│   ├── cli/
+│   │   └── args.js              # Pure CLI argument & environment variable parsing
+│   ├── acp/
+│   │   ├── process.js           # Child process spawning & NDJSON stream setup
+│   │   └── handlers.js          # Session handshake, permission prompts, and update handlers
+│   ├── repl/
+│   │   ├── loop.js              # Interactive REPL readline loop & turn lifecycle
+│   │   ├── commands.js          # REPL slash command registry & tool execution listing
+│   │   └── context.js           # @file context mention expansion & Markdown export
+│   ├── ui/
+│   │   ├── ansi.js              # Centralized ANSI escape codes and styling constants
+│   │   ├── banners.js           # REPL headers, slash command help, and CLI usage screens
+│   │   ├── spinner.js           # Non-intrusive terminal activity spinner
+│   │   └── formatters.js        # Tool inputs, outputs, and content blocks formatting
+│   └── markdown/
+│       ├── patterns.js          # Pure markdown pattern matching (headers, lists, blockquotes, HR)
+│       └── renderer.js          # Streaming Markdown terminal renderer state machine
+└── test/
+    ├── cli.test.js              # CLI argument & environment variable parsing tests
+    ├── formatters.test.js       # Tool formatting, @file expansion, and history export tests
+    ├── acp-handlers.test.js     # Session update, thought streaming, and permission prompt tests
+    ├── repl-commands.test.js    # REPL slash commands and activity spinner tests
+    └── markdown.test.js         # Markdown stream rendering and pattern matcher tests
+```
+
+---
+
 ## Installation & Setup
 
 ### Prerequisites
@@ -137,16 +172,20 @@ Type slash commands directly at the `❯ User:` prompt:
 
 ## Running Tests
 
-Run the test suite using Node's built-in test runner:
+Run the full test suite using Node's built-in test runner:
 
 ```bash
 npm test
 ```
 
-Or run the client test suite directly:
+Or run individual test suites directly:
 
 ```bash
-node --test test_client.test.js
+node --test test/cli.test.js
+node --test test/formatters.test.js
+node --test test/acp-handlers.test.js
+node --test test/repl-commands.test.js
+node --test test/markdown.test.js
 ```
 
 ---
