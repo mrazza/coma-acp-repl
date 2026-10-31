@@ -104,3 +104,49 @@ test("ActivitySpinner - start, update, stop without error", () => {
     spinner.stop();
     assert.strictEqual(spinner.isActive, false);
 });
+
+test("handleSlashCommand - /new and /cwd reset renderer", async () => {
+    let resetCount = 0;
+    const mockRenderer = {
+        reset: () => {
+            resetCount++;
+        }
+    };
+
+    const mockConnection = {
+        buildSession: () => ({
+            start: async () => ({ sessionId: "new-sess-123" })
+        })
+    };
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coma-test-reset-"));
+    const subDir = path.join(tempDir, "subdir");
+    fs.mkdirSync(subDir);
+
+    try {
+        const context = {
+            cwd: tempDir,
+            connection: mockConnection,
+            renderer: mockRenderer,
+            toolCalls: new Map([["id1", {}]]),
+            history: [{ userPrompt: "hi" }],
+            lastUpdateType: "agent_message_chunk"
+        };
+
+        // Test /new
+        const newRes = await handleSlashCommand("/new", context);
+        assert.strictEqual(newRes.handled, true);
+        assert.strictEqual(resetCount, 1);
+        assert.strictEqual(context.lastUpdateType, null);
+        assert.strictEqual(context.history.length, 0);
+
+        // Test /cwd with valid directory
+        const cwdRes = await handleSlashCommand(`/cwd ${subDir}`, context);
+        assert.strictEqual(cwdRes.handled, true);
+        assert.strictEqual(resetCount, 2);
+        assert.strictEqual(context.lastUpdateType, null);
+        assert.strictEqual(context.cwd, subDir);
+    } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});

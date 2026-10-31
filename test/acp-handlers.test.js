@@ -205,3 +205,87 @@ test("handleRequestPermission - interactive permission choices", async () => {
         outcome: { outcome: "cancelled" }
     });
 });
+
+test("handleRequestPermission - passes abort signal and handles abort", async () => {
+    const permissionCtx = {
+        params: {
+            toolCall: { title: "execute_code", rawInput: "echo 1" },
+            options: [
+                { optionId: "opt_allow_once", name: "Allow Once", kind: "allow_once" }
+            ]
+        }
+    };
+
+    const controller = new AbortController();
+    let passedOpts = null;
+
+    const contextAbort = {
+        turnAbortController: controller,
+        rl: {
+            question: async (_query, opts) => {
+                passedOpts = opts;
+                const err = new Error("This operation was aborted");
+                err.name = "AbortError";
+                throw err;
+            }
+        }
+    };
+
+    const res = await handleRequestPermission(permissionCtx, contextAbort);
+    assert.deepStrictEqual(res, { outcome: { outcome: "cancelled" } });
+    assert.strictEqual(passedOpts?.signal, controller.signal);
+});
+
+test("handleSessionUpdate - spinner restarts on consecutive in_progress tool updates", () => {
+    let spinnerStartedCount = 0;
+    let spinnerStoppedCount = 0;
+    let lastSpinnerText = "";
+
+    const mockSpinner = {
+        start: (text) => {
+            spinnerStartedCount++;
+            lastSpinnerText = text;
+        },
+        stop: () => {
+            spinnerStoppedCount++;
+        }
+    };
+
+    const context = {
+        toolCalls: new Map(),
+        lastUpdateType: null,
+        spinner: mockSpinner,
+        verbose: false,
+        history: [],
+        currentTurn: { thoughts: "", agentResponse: "", toolCalls: [] }
+    };
+
+    // 1. Initial tool_call (in_progress)
+    handleSessionUpdate({
+        update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "call_abc",
+            title: "read_file",
+            status: "in_progress",
+            rawInput: { path: "test.txt" }
+        }
+    }, context);
+
+    assert.strictEqual(spinnerStoppedCount, 1);
+    assert.strictEqual(spinnerStartedCount, 1);
+    assert.strictEqual(lastSpinnerText, "Running read_file...");
+
+    // 2. Consecutive tool_call_update (still in_progress)
+    handleSessionUpdate({
+        update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "call_abc",
+            title: "read_file",
+            status: "in_progress"
+        }
+    }, context);
+
+    assert.strictEqual(spinnerStoppedCount, 2);
+    assert.strictEqual(spinnerStartedCount, 2);
+    assert.strictEqual(lastSpinnerText, "Running read_file...");
+});

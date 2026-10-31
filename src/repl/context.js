@@ -5,9 +5,11 @@ import { formatToolInput } from "../ui/formatters.js";
 /**
  * Expands @path/to/file mentions in user prompts into ACP ContentBlocks.
  */
-export function expandFileMentions(promptText, cwd = process.cwd()) {
+export function expandFileMentions(promptText, cwd = process.cwd(), options = {}) {
+    const maxFileSize = options.maxFileSize ?? 1024 * 1024;
     const mentionRegex = /(?:^|\s)@([^\s"']+)/g;
     const filesAttached = [];
+    const filesSkipped = [];
     const contentBlocks = [];
     const seenPaths = new Set();
 
@@ -21,11 +23,32 @@ export function expandFileMentions(promptText, cwd = process.cwd()) {
             seenPaths.add(resolvedPath);
             try {
                 if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
-                    const content = fs.readFileSync(resolvedPath, "utf8");
+                    const stat = fs.statSync(resolvedPath);
+                    const relativePath = path.relative(cwd, resolvedPath);
+                    if (stat.size > maxFileSize) {
+                        filesSkipped.push({
+                            mention: `@${cleanPath}`,
+                            relativePath,
+                            reason: `File size (${stat.size} bytes) exceeds limit (${maxFileSize} bytes)`
+                        });
+                        continue;
+                    }
+
+                    const buffer = fs.readFileSync(resolvedPath);
+                    if (buffer.includes(0)) {
+                        filesSkipped.push({
+                            mention: `@${cleanPath}`,
+                            relativePath,
+                            reason: "Binary file content detected"
+                        });
+                        continue;
+                    }
+
+                    const content = buffer.toString("utf8");
                     filesAttached.push({
                         mention: `@${cleanPath}`,
                         path: resolvedPath,
-                        relativePath: path.relative(cwd, resolvedPath),
+                        relativePath,
                         content
                     });
                 }
@@ -50,7 +73,8 @@ export function expandFileMentions(promptText, cwd = process.cwd()) {
     return {
         promptText,
         blocks: contentBlocks,
-        filesAttached
+        filesAttached,
+        filesSkipped
     };
 }
 
