@@ -6,7 +6,8 @@
   "private": true,
   "main": "test_client.js",
   "scripts": {
-    "start": "node test_client.js"
+    "start": "node test_client.js",
+    "test": "node --test"
   },
   "license": "Apache-2.0",
   "dependencies": {
