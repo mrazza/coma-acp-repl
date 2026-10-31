@@ -1,6 +1,28 @@
 export class MarkdownStreamRenderer {
-    constructor() {
+    constructor(options = {}) {
+        if (typeof options === "function") {
+            this.options = { output: options };
+        } else {
+            this.options = options || {};
+        }
+
+        if (typeof this.options.output === "function") {
+            this.output = this.options.output;
+        } else if (this.options.output && typeof this.options.output.write === "function") {
+            this.output = (str) => this.options.output.write(str);
+        } else {
+            this.output = (str) => process.stdout.write(str);
+        }
+
         this.reset();
+    }
+
+    getWidth() {
+        if (typeof this.options.width === "number" && this.options.width > 0) {
+            return this.options.width;
+        }
+        const cols = (typeof process !== "undefined" && process.stdout && process.stdout.columns) || 60;
+        return Math.min(cols, 80);
     }
 
     reset() {
@@ -18,10 +40,12 @@ export class MarkdownStreamRenderer {
         this.inHeader = 0;
         this.inBlockquote = false;
 
-        // Code block language reading
+        // Code block language reading & borders
         this.readingLangId = false;
         this.langIdBuf = "";
         this.pendingCodeBlockBorder = false;
+        this.codeFenceLength = 0;
+        this.backticksAtLineStart = false;
     }
 
     setUpdateType(type) {
@@ -32,16 +56,36 @@ export class MarkdownStreamRenderer {
     }
 
     restoreStyle() {
-        if (this.inCodeBlock) {
-            process.stdout.write("\x1b[33m");
-        } else if (this.inInlineCode) {
-            process.stdout.write("\x1b[33m");
+        if (this.currentType === "agent_thought_chunk") {
+            this.output("\x1b[90m");
         } else {
-            if (this.currentType === "agent_thought_chunk") {
-                process.stdout.write("\x1b[90m");
-            } else {
-                process.stdout.write("\x1b[0m");
-            }
+            this.output("\x1b[0m");
+        }
+
+        if (this.inHeader > 0) {
+            const headerStyles = {
+                1: "\x1b[1;35m",
+                2: "\x1b[1;36m",
+                3: "\x1b[1;33m",
+                4: "\x1b[1;32m"
+            };
+            this.output(headerStyles[this.inHeader] || headerStyles[4]);
+        }
+
+        if (this.inBlockquote) {
+            this.output("\x1b[3m");
+        }
+
+        if (this.inCodeBlock || this.inInlineCode) {
+            this.output("\x1b[33m");
+        }
+
+        if (this.inBold) {
+            this.output("\x1b[1m");
+        }
+
+        if (this.inItalic) {
+            this.output("\x1b[3m");
         }
     }
 
@@ -50,35 +94,41 @@ export class MarkdownStreamRenderer {
         if (count === 0) return;
         this.backtickCount = 0;
 
-        if (count === 3) {
-            this.inCodeBlock = !this.inCodeBlock;
-            if (this.inCodeBlock) {
-                this.readingLangId = true;
-                this.langIdBuf = "";
-            } else {
-                process.stdout.write(`\n\x1b[33m└──────────────────────────────────────────────────────────\x1b[0m\n`);
+        if (this.inCodeBlock) {
+            if (this.backticksAtLineStart && count >= this.codeFenceLength) {
+                this.inCodeBlock = false;
+                this.codeFenceLength = 0;
                 this.pendingCodeBlockBorder = false;
+                const width = this.getWidth();
+                this.output(`\n\x1b[33m└${"─".repeat(Math.max(0, width - 1))}\x1b[0m\n`);
                 this.restoreStyle();
-            }
-        } else {
-            if (this.inCodeBlock) {
+            } else {
                 if (this.pendingCodeBlockBorder) {
-                    process.stdout.write(`\x1b[33m│ \x1b[0m`);
+                    this.output("\x1b[33m│ \x1b[0m");
+                    this.restoreStyle();
                     this.pendingCodeBlockBorder = false;
                 }
-                process.stdout.write('`'.repeat(count));
-            } else {
-                if (count === 1) {
-                    this.inInlineCode = !this.inInlineCode;
-                    if (this.inInlineCode) {
-                        process.stdout.write(`\x1b[33m`);
-                    } else {
-                        process.stdout.write(`\x1b[0m`);
-                        this.restoreStyle();
-                    }
+                this.output('`'.repeat(count));
+            }
+            return;
+        }
+
+        if (count >= 3) {
+            this.inCodeBlock = true;
+            this.codeFenceLength = count;
+            this.readingLangId = true;
+            this.langIdBuf = "";
+        } else {
+            if (count === 1) {
+                this.inInlineCode = !this.inInlineCode;
+                if (this.inInlineCode) {
+                    this.output("\x1b[33m");
                 } else {
-                    process.stdout.write('`'.repeat(count));
+                    this.output("\x1b[0m");
+                    this.restoreStyle();
                 }
+            } else {
+                this.output('`'.repeat(count));
             }
         }
     }
@@ -88,23 +138,32 @@ export class MarkdownStreamRenderer {
         if (count === 0) return;
         this.asteriskCount = 0;
 
-        if (count === 2) {
+        if (count === 3) {
+            this.inBold = !this.inBold;
+            this.inItalic = !this.inItalic;
+            if (this.inBold && this.inItalic) {
+                this.output("\x1b[1m\x1b[3m");
+            } else {
+                this.output("\x1b[0m");
+                this.restoreStyle();
+            }
+        } else if (count === 2) {
             this.inBold = !this.inBold;
             if (this.inBold) {
-                process.stdout.write(`\x1b[1m`);
+                this.output("\x1b[1m");
             } else {
-                process.stdout.write(`\x1b[0m`);
+                this.output("\x1b[0m");
                 this.restoreStyle();
             }
         } else if (count === 1) {
             this.inItalic = !this.inItalic;
             if (this.inItalic) {
-                process.stdout.write(`\x1b[3m`);
+                this.output("\x1b[3m");
             } else {
-                process.stdout.write(`\x1b[23m`);
+                this.output("\x1b[23m");
             }
         } else {
-            process.stdout.write('*'.repeat(count));
+            this.output('*'.repeat(count));
         }
     }
 
@@ -117,14 +176,40 @@ export class MarkdownStreamRenderer {
         }
     }
 
+    isPlausibleLineStart(str) {
+        if (/^#{1,6} ?$/.test(str)) return true;
+        if (/^ *(> *)+$/.test(str)) return true;
+        if (/^ *[\-\*] ?$/.test(str)) return true;
+        if (/^ *\d+(\. ?)?$/.test(str) && !/^ *\d+ $/.test(str)) return true;
+        if (/^ *(\-+|\*+|\_+)[ \-\*\_]*$/.test(str)) return true;
+        if (/^ *`{1,10}$/.test(str)) return true;
+        if (/^ {1,4}$/.test(str)) return true;
+        return false;
+    }
+
     isHorizontalRule(buf) {
+        if (!buf || typeof buf !== "string") return false;
         const trimmed = buf.trim();
         if (trimmed.length < 3) return false;
-        return /^[\- ]+$/.test(trimmed) || /^[\* ]+$/.test(trimmed);
+
+        if (/^[\- ]+$/.test(trimmed)) {
+            const count = (trimmed.match(/-/g) || []).length;
+            return count >= 3;
+        }
+        if (/^[\* ]+$/.test(trimmed)) {
+            const count = (trimmed.match(/\*/g) || []).length;
+            return count >= 3;
+        }
+        if (/^[\_ ]+$/.test(trimmed)) {
+            const count = (trimmed.match(/_/g) || []).length;
+            return count >= 3;
+        }
+        return false;
     }
 
     printHorizontalRule() {
-        process.stdout.write(`\n\x1b[90m──────────────────────────────────────────────────\x1b[0m\n`);
+        const width = this.getWidth();
+        this.output(`\n\x1b[90m${"─".repeat(width)}\x1b[0m\n`);
     }
 
     printChar(char) {
@@ -143,13 +228,11 @@ export class MarkdownStreamRenderer {
         this.flushAsterisks();
 
         if (this.readingLangId) {
-            if (this.langIdBuf.length < 16) {
-                this.langIdBuf += char;
-            }
+            this.handleReadingLangId(char);
             return;
         }
 
-        process.stdout.write(char);
+        this.output(char);
     }
 
     tryMatchBlockPattern() {
@@ -162,22 +245,24 @@ export class MarkdownStreamRenderer {
                 this.inHeader = level;
                 this.lineStart = false;
                 this.lineStartBuf = "";
-                
+
                 const prefixes = {
                     1: "\x1b[1;35m█ ",
                     2: "\x1b[1;36m■ ",
                     3: "\x1b[1;33m▲ ",
                     4: "\x1b[1;32m○ "
                 };
-                process.stdout.write(prefixes[level] || prefixes[4]);
+                this.output(prefixes[level] || prefixes[4]);
                 return true;
             }
 
-            // 2. Blockquotes: ^( *)> $
-            const bqMatch = buf.match(/^( *)> $/);
+            // 2. Blockquotes: ^( *)((?:> *)+)$
+            const bqMatch = buf.match(/^( *)((?:> *)+)$/);
             if (bqMatch) {
                 const spaces = bqMatch[1];
-                process.stdout.write(`${spaces}\x1b[90m│ \x1b[3m`);
+                const level = (bqMatch[2].match(/>/g) || []).length;
+                const bars = "\x1b[90m│ ".repeat(level);
+                this.output(`${spaces}${bars}\x1b[3m`);
                 this.inBlockquote = true;
                 this.lineStart = false;
                 this.lineStartBuf = "";
@@ -188,7 +273,7 @@ export class MarkdownStreamRenderer {
             const bulletMatch = buf.match(/^( *)[\-\*] $/);
             if (bulletMatch) {
                 const spaces = bulletMatch[1];
-                process.stdout.write(`${spaces}\x1b[32m•\x1b[0m `);
+                this.output(`${spaces}\x1b[32m•\x1b[0m `);
                 this.restoreStyle();
                 this.lineStart = false;
                 this.lineStartBuf = "";
@@ -200,7 +285,7 @@ export class MarkdownStreamRenderer {
             if (numMatch) {
                 const spaces = numMatch[1];
                 const num = numMatch[2];
-                process.stdout.write(`${spaces}\x1b[36m${num}.\x1b[0m `);
+                this.output(`${spaces}\x1b[36m${num}.\x1b[0m `);
                 this.restoreStyle();
                 this.lineStart = false;
                 this.lineStartBuf = "";
@@ -211,9 +296,11 @@ export class MarkdownStreamRenderer {
     }
 
     write(text) {
-        this.restoreStyle();
+        if (!text || typeof text !== "string") return;
+
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
+            if (char === '\r') continue;
 
             if (this.readingLangId) {
                 this.handleReadingLangId(char);
@@ -239,11 +326,10 @@ export class MarkdownStreamRenderer {
         if (char === '\n') {
             this.readingLangId = false;
             const lang = this.langIdBuf.trim();
-            if (lang) {
-                process.stdout.write(`\x1b[33m┌── Code (${lang}) ──────────────────────────────────────────────────\x1b[0m\n`);
-            } else {
-                process.stdout.write(`\x1b[33m┌── Code ──────────────────────────────────────────────────\x1b[0m\n`);
-            }
+            const width = this.getWidth();
+            const prefix = lang ? `┌── Code (${lang}) ` : `┌── Code `;
+            const remaining = Math.max(0, width - prefix.length);
+            this.output(`\x1b[33m${prefix}${"─".repeat(remaining)}\x1b[0m\n`);
             this.lineStart = true;
             this.pendingCodeBlockBorder = true;
         } else {
@@ -255,72 +341,84 @@ export class MarkdownStreamRenderer {
 
     handleCodeBlockChar(char) {
         if (char === '`') {
+            if (this.backtickCount === 0) {
+                this.backticksAtLineStart = this.lineStart;
+            }
             this.backtickCount++;
             return;
         }
 
+        const wasInCodeBlock = this.inCodeBlock;
         this.flushBackticks();
 
+        if (wasInCodeBlock && !this.inCodeBlock) {
+            this.lineStart = true;
+            return;
+        }
+
         if (char === '\n') {
-            process.stdout.write('\n');
+            if (this.pendingCodeBlockBorder) {
+                this.output("\x1b[33m│ \x1b[0m");
+                this.restoreStyle();
+            }
+            this.output('\n');
             this.pendingCodeBlockBorder = true;
             this.lineStart = true;
         } else {
             if (this.pendingCodeBlockBorder) {
-                process.stdout.write(`\x1b[33m│ \x1b[0m`);
+                this.output("\x1b[33m│ \x1b[0m");
+                this.restoreStyle();
                 this.pendingCodeBlockBorder = false;
             }
-            process.stdout.write(char);
+            this.output(char);
+            this.lineStart = false;
         }
     }
 
     handleLineStartChar(char) {
-        const isPrefixChar = /^[#>\-\*\. 0-9\r]$/.test(char);
-        if (isPrefixChar) {
-            if (this.lineStartBuf.length < 16) {
-                this.lineStartBuf += char;
-                if (this.tryMatchBlockPattern()) {
-                    return true;
-                }
-                return true;
-            } else {
-                this.flushLineStartBuf();
-                this.lineStart = false;
-            }
-        } else {
-            if (char === '\n') {
-                if (this.isHorizontalRule(this.lineStartBuf)) {
-                    this.printHorizontalRule();
-                    this.lineStartBuf = "";
-                    this.lineStart = true;
-                    return true;
-                }
-                this.flushLineStartBuf();
-                this.printChar('\n');
-                return true;
-            }
-            this.flushLineStartBuf();
-            this.lineStart = false;
-        }
-        return false;
-    }
-
-    handleNormalChar(char) {
         if (char === '\n') {
             if (this.isHorizontalRule(this.lineStartBuf)) {
                 this.printHorizontalRule();
                 this.lineStartBuf = "";
                 this.lineStart = true;
-                return;
+                return true;
             }
+            this.flushLineStartBuf();
+            this.printChar('\n');
+            this.lineStart = true;
+            return true;
+        }
 
+        const candidate = this.lineStartBuf + char;
+        if (this.isPlausibleLineStart(candidate)) {
+            if (candidate.length < 16) {
+                this.lineStartBuf = candidate;
+                if (this.tryMatchBlockPattern()) {
+                    return true;
+                }
+                return true;
+            }
+        }
+
+        this.flushLineStartBuf();
+        this.lineStart = false;
+        return false;
+    }
+
+    handleNormalChar(char) {
+        if (char === '\n') {
+            let resetNeeded = false;
             if (this.inHeader > 0) {
-                process.stdout.write(`\x1b[0m`);
                 this.inHeader = 0;
+                resetNeeded = true;
             }
             if (this.inBlockquote) {
-                process.stdout.write(`\x1b[0m`);
                 this.inBlockquote = false;
+                resetNeeded = true;
+            }
+            if (resetNeeded) {
+                this.output("\x1b[0m");
+                this.restoreStyle();
             }
 
             this.printChar('\n');
@@ -331,14 +429,19 @@ export class MarkdownStreamRenderer {
     }
 
     flush() {
+        if (this.isHorizontalRule(this.lineStartBuf)) {
+            this.printHorizontalRule();
+            this.lineStartBuf = "";
+        }
+        this.flushLineStartBuf();
         this.flushBackticks();
         this.flushAsterisks();
-        this.flushLineStartBuf();
         if (this.inHeader > 0 || this.inBlockquote || this.inBold || this.inItalic || this.inInlineCode) {
-            process.stdout.write(`\x1b[0m`);
+            this.output("\x1b[0m");
         }
         if (this.inCodeBlock) {
-            process.stdout.write(`\n\x1b[33m└──────────────────────────────────────────────────────────\x1b[0m\n`);
+            const width = this.getWidth();
+            this.output(`\n\x1b[33m└${"─".repeat(Math.max(0, width - 1))}\x1b[0m\n`);
         }
         this.reset();
     }
