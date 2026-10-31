@@ -80,6 +80,7 @@ export const COMMAND_HANDLERS = {
             context.toolCalls.clear();
             context.history = [];
             context.lastUpdateType = null;
+            context.renderer?.reset();
             console.log(`${ANSI.green}✓ New session created. ID: ${newSession.sessionId}${ANSI.reset}`);
         } catch (err) {
             console.error(`${ANSI.red}Failed to create new session:${ANSI.reset}`, err.message);
@@ -116,6 +117,7 @@ export const COMMAND_HANDLERS = {
                 context.toolCalls.clear();
                 context.history = [];
                 context.lastUpdateType = null;
+                context.renderer?.reset();
                 console.log(`${ANSI.green}✓ New session created. ID: ${newSession.sessionId}${ANSI.reset}`);
             } catch (err) {
                 console.error(`${ANSI.red}Failed to start new session:${ANSI.reset}`, err.message);

@@ -78,6 +78,36 @@ test("expandFileMentions - attaches existing files and ignores nonexistent", () 
     }
 });
 
+test("expandFileMentions - skips oversized and binary files", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coma-test-skip-"));
+    const normalFile = path.join(tempDir, "normal.txt");
+    const oversizedFile = path.join(tempDir, "big.txt");
+    const binaryFile = path.join(tempDir, "image.bin");
+
+    fs.writeFileSync(normalFile, "normal text");
+    fs.writeFileSync(oversizedFile, "a".repeat(200));
+    fs.writeFileSync(binaryFile, Buffer.from([0x00, 0x01, 0x02, 0x03]));
+
+    try {
+        const prompt = "Check @normal.txt @big.txt and @image.bin";
+        const result = expandFileMentions(prompt, tempDir, { maxFileSize: 100 });
+
+        assert.strictEqual(result.filesAttached.length, 1);
+        assert.strictEqual(result.filesAttached[0].relativePath, "normal.txt");
+
+        assert.strictEqual(result.filesSkipped.length, 2);
+        const skippedBig = result.filesSkipped.find((f) => f.relativePath === "big.txt");
+        const skippedBinary = result.filesSkipped.find((f) => f.relativePath === "image.bin");
+
+        assert.ok(skippedBig);
+        assert.ok(skippedBig.reason.includes("exceeds limit"));
+        assert.ok(skippedBinary);
+        assert.ok(skippedBinary.reason.includes("Binary file content detected"));
+    } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
+
 test("exportSessionHistory - writes complete markdown document", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coma-test-export-"));
     const exportFile = path.join(tempDir, "session.md");

@@ -212,7 +212,7 @@ describe("MarkdownStreamRenderer", () => {
             const prefix = "┌── Code (js) ";
             const topRemaining = width - prefix.length;
             const expectedTop = `\x1b[33m${prefix}${"─".repeat(topRemaining)}\x1b[0m\n`;
-            const expectedBottom = `\n\x1b[33m└${"─".repeat(width - 1)}\x1b[0m\n`;
+            const expectedBottom = `\x1b[33m└${"─".repeat(width - 1)}\x1b[0m\n`;
 
             assert.ok(getOutput().includes(expectedTop));
             assert.ok(getOutput().includes(expectedBottom));
@@ -387,6 +387,15 @@ describe("MarkdownStreamRenderer", () => {
             const out = getOutput();
             assert.ok(out.includes("const s = `hello`;"));
             assert.ok(out.includes("└─"));
+        });
+
+        test("no extra blank line before bottom border when code block closes normally", () => {
+            const { renderer, getOutput } = createCaptureRenderer({ width: 50 });
+            renderer.write("```js\nconst x = 1;\n```\n");
+
+            const out = getOutput();
+            assert.ok(!out.includes("\n\n\x1b[33m└"));
+            assert.ok(out.includes("\n\x1b[33m└"));
         });
     });
 

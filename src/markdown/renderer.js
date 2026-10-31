@@ -107,7 +107,7 @@ export class MarkdownStreamRenderer {
                 this.codeFenceLength = 0;
                 this.pendingCodeBlockBorder = false;
                 const width = this.getWidth();
-                this.output(`\n${ANSI.yellow}└${"─".repeat(Math.max(0, width - 1))}${ANSI.reset}\n`);
+                this.output(`${ANSI.yellow}└${"─".repeat(Math.max(0, width - 1))}${ANSI.reset}\n`);
                 this.restoreStyle();
             } else {
                 if (this.pendingCodeBlockBorder) {
@@ -404,7 +404,8 @@ export class MarkdownStreamRenderer {
         }
         if (this.inCodeBlock) {
             const width = this.getWidth();
-            this.output(`\n${ANSI.yellow}└${"─".repeat(Math.max(0, width - 1))}${ANSI.reset}\n`);
+            const prefix = this.lineStart ? "" : "\n";
+            this.output(`${prefix}${ANSI.yellow}└${"─".repeat(Math.max(0, width - 1))}${ANSI.reset}\n`);
         }
         this.reset();
     }

@@ -69,7 +69,12 @@ export async function handleRequestPermission(ctx, context = {}) {
     }
 
     try {
-        const answer = await context.rl.question(`Select option [1-${options.length}] or 'n' to cancel: `);
+        const questionOpts = context.turnAbortController?.signal
+            ? { signal: context.turnAbortController.signal }
+            : undefined;
+        const answer = questionOpts
+            ? await context.rl.question(`Select option [1-${options.length}] or 'n' to cancel: `, questionOpts)
+            : await context.rl.question(`Select option [1-${options.length}] or 'n' to cancel: `);
         const trimmed = (answer || "").trim().toLowerCase();
 
         if (trimmed === "n" || trimmed === "cancel" || trimmed === "reject") {
@@ -197,9 +202,9 @@ export function handleToolCallUpdate(update, context) {
                     process.stdout.write(`${ANSI.dim}  Args: ${formatted}${ANSI.reset}\n`);
                 }
             }
-            if (context.spinner) {
-                context.spinner.start(`Running ${tool.title}...`);
-            }
+        }
+        if (context.spinner) {
+            context.spinner.start(`Running ${tool.title}...`);
         }
     } else if (tool.status === "completed" || tool.status === "failed") {
         tool._loggedState = tool.status;

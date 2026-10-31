@@ -53,6 +53,7 @@ export async function runInteractiveRepl(context) {
             if (context.spinner) context.spinner.stop();
             process.stdout.write(`\n${ANSI.yellow}[Cancelling prompt turn...]${ANSI.reset}\n`);
             context.abortTurn = true;
+            context.turnAbortController?.abort();
             if (context.cancelTurnPromiseResolve) {
                 context.cancelTurnPromiseResolve();
             }
@@ -109,9 +110,12 @@ export async function runInteractiveRepl(context) {
             }
         }
 
-        const { blocks, filesAttached } = expandFileMentions(trimmed, context.cwd);
+        const { blocks, filesAttached, filesSkipped } = expandFileMentions(trimmed, context.cwd);
         if (filesAttached.length > 0) {
             process.stdout.write(`${ANSI.dim}[Attached context from: ${filesAttached.map((f) => f.relativePath).join(", ")}]${ANSI.reset}\n`);
+        }
+        if (filesSkipped?.length > 0) {
+            process.stdout.write(`${ANSI.dim}[Skipped @file mentions: ${filesSkipped.map((f) => `${f.relativePath} (${f.reason})`).join(", ")}]${ANSI.reset}\n`);
         }
 
         const currentTurn = {
@@ -127,6 +131,8 @@ export async function runInteractiveRepl(context) {
 
         context.isTurnRunning = true;
         context.abortTurn = false;
+        const turnAbortController = new AbortController();
+        context.turnAbortController = turnAbortController;
         let cancelPromiseResolve;
         const cancelPromise = new Promise((resolve) => {
             cancelPromiseResolve = resolve;
@@ -167,6 +173,7 @@ export async function runInteractiveRepl(context) {
                 currentTurn.stopReason = result.stopReason;
                 console.log(`\n${ANSI.dim}[Response Completed. Stop Reason: ${result.stopReason}]${ANSI.reset}`);
             } else {
+                promptPromise.catch(() => {});
                 context.renderer?.flush();
                 context.lastUpdateType = null;
                 currentTurn.stopReason = "cancelled";
@@ -180,6 +187,7 @@ export async function runInteractiveRepl(context) {
         } finally {
             context.isTurnRunning = false;
             context.cancelTurnPromiseResolve = null;
+            context.turnAbortController = null;
             context.abortTurn = false;
         }
     }
